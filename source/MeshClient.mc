@@ -122,20 +122,23 @@ class MeshClient extends Ble.BleDelegate {
     }
 
     function onScanResults(scanResults) {
-        for (var r = scanResults.next(); r != null; r = scanResults.next()) {
-            if (isMeshtastic(r)) {
-                deviceName = r.getDeviceName();
-                System.println("found " + deviceName + " rssi=" + r.getRssi());
+        var r = scanResults.next();
+        while (r != null) {
+            var sr = r as Ble.ScanResult;
+            if (isMeshtastic(sr)) {
+                deviceName = sr.getDeviceName();
+                System.println("found " + deviceName + " rssi=" + sr.getRssi());
                 try {
                     Ble.setScanState(Ble.SCAN_STATE_OFF);
                     state = S_CONNECTING;
-                    mDevice = Ble.pairDevice(r);
+                    mDevice = Ble.pairDevice(sr);
                 } catch (e) {
                     fail("pair: " + e.getErrorMessage());
                 }
                 WatchUi.requestUpdate();
                 return;
             }
+            r = scanResults.next();
         }
     }
 

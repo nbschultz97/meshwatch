@@ -31,7 +31,7 @@ class MainView extends WatchUi.View {
         }
     }
 
-    function onTick() {
+    function onTick() as Void {
         WatchUi.requestUpdate();
     }
 

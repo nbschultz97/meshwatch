@@ -4,10 +4,11 @@
                     entry="HeliographApp"
                     launcherIcon="@Drawables.LauncherIcon"
                     name="@Strings.AppName"
-                    type="watchapp"
+                    type="watch-app"
                     minApiLevel="3.3.0">
         <iq:products>
-            <iq:product id="tactix7amoled"/>
+            <!-- tactix 7 AMOLED shares the epix Pro Gen2 51mm CIQ identity -->
+            <iq:product id="epix2pro51mm"/>
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="BluetoothLowEnergy"/>
