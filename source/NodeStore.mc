@@ -6,6 +6,30 @@ class NodeStore {
     var nodes = {};      // num (Long) -> { :shortName, :longName, :battery, :lastHeard, :snr, :hops }
     var order = [];      // node nums in arrival order, for stable display
     var packetCount = 0; // MeshPackets seen after config sync (proves live traffic)
+    var messages = [];   // newest first: { :from, :text, :ts, :out }
+    var unread = 0;
+
+    function addMessage(from, text, out) {
+        messages = [{:from => from, :text => text,
+            :ts => Time.now().value(), :out => out}].addAll(messages);
+        if (messages.size() > 30) {
+            messages = messages.slice(0, 30);
+        }
+        if (!out) {
+            unread++;
+        }
+    }
+
+    function nameFor(num) {
+        if (num == null) {
+            return "????";
+        }
+        var n = nodes.get(num);
+        if (n != null && n.get(:shortName) != null) {
+            return n.get(:shortName);
+        }
+        return "!" + (num.toNumber() & 0xffff).format("%04x");
+    }
 
     function upsert(num, info) {
         var existing = nodes.get(num);

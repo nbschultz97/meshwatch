@@ -53,6 +53,36 @@ module Proto {
         return out;
     }
 
+    // ToRadio { packet: MeshPacket { to: broadcast, decoded: Data {
+    // portnum: TEXT_MESSAGE_APP, payload: text }}}. id/want_ack omitted to
+    // stay under CIQ's small BLE write limit; firmware assigns the id.
+    function encodeTextMessage(text) {
+        var payload = []b;
+        var chars = text.toUtf8Array();
+        for (var i = 0; i < chars.size(); i++) {
+            payload.add(chars[i]);
+        }
+        var data = []b;
+        data.add(0x08); // Data.portnum, varint
+        data.add(0x01); // TEXT_MESSAGE_APP
+        data.add(0x12); // Data.payload, bytes
+        data.addAll(encodeVarint(payload.size()));
+        data.addAll(payload);
+
+        var mesh = []b;
+        mesh.add(0x15); // MeshPacket.to, fixed32
+        mesh.addAll([0xff, 0xff, 0xff, 0xff]b); // broadcast
+        mesh.add(0x22); // MeshPacket.decoded, message
+        mesh.addAll(encodeVarint(data.size()));
+        mesh.addAll(data);
+
+        var out = []b;
+        out.add(0x0a); // ToRadio.packet, message
+        out.addAll(encodeVarint(mesh.size()));
+        out.addAll(mesh);
+        return out;
+    }
+
     function bytesToString(b) {
         try {
             var s = StringUtil.utf8ArrayToString(b);
@@ -96,7 +126,7 @@ module Proto {
                     result = :node;
                 } else if (field == 1) {
                     store.packetCount++;
-                    result = :packet;
+                    result = parseMeshPacket(sub, store) ? :message : :packet;
                 }
             } else if (wire == 5) {
                 pos += 4;
@@ -107,6 +137,81 @@ module Proto {
             }
         }
         return result;
+    }
+
+    // Returns true when the packet carried a text message we stored.
+    // MeshPacket: 1=from(fx32) 4=decoded(Data); Data: 1=portnum 2=payload
+    function parseMeshPacket(b, store) {
+        var pos = 0;
+        var from = null;
+        var portnum = 0;
+        var payload = null;
+        while (pos < b.size()) {
+            var r = readVarint(b, pos);
+            var tag = r[0].toNumber();
+            pos = r[1];
+            var field = tag >> 3;
+            var wire = tag & 0x7;
+            if (wire == 0) {
+                r = readVarint(b, pos);
+                pos = r[1];
+                if (field == 1) { // defensive: some builds varint-encode from
+                    from = r[0];
+                }
+            } else if (wire == 2) {
+                r = readVarint(b, pos);
+                var len = r[0].toNumber();
+                pos = r[1];
+                var sub = b.slice(pos, pos + len);
+                pos += len;
+                if (field == 4) {
+                    var dpos = 0;
+                    while (dpos < sub.size()) {
+                        var dr = readVarint(sub, dpos);
+                        var dtag = dr[0].toNumber();
+                        dpos = dr[1];
+                        var dfield = dtag >> 3;
+                        var dwire = dtag & 0x7;
+                        if (dwire == 0) {
+                            dr = readVarint(sub, dpos);
+                            dpos = dr[1];
+                            if (dfield == 1) {
+                                portnum = dr[0].toNumber();
+                            }
+                        } else if (dwire == 2) {
+                            dr = readVarint(sub, dpos);
+                            var dlen = dr[0].toNumber();
+                            dpos = dr[1];
+                            if (dfield == 2) {
+                                payload = sub.slice(dpos, dpos + dlen);
+                            }
+                            dpos += dlen;
+                        } else if (dwire == 5) {
+                            dpos += 4;
+                        } else if (dwire == 1) {
+                            dpos += 8;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            } else if (wire == 5) {
+                if (field == 1) {
+                    from = b.decodeNumber(Lang.NUMBER_FORMAT_UINT32,
+                        {:offset => pos, :endianness => Lang.ENDIAN_LITTLE});
+                }
+                pos += 4;
+            } else if (wire == 1) {
+                pos += 8;
+            } else {
+                break;
+            }
+        }
+        if (portnum == 1 && payload != null) {
+            store.addMessage(from, bytesToString(payload), false);
+            return true;
+        }
+        return false;
     }
 
     function parseMyInfo(b, store) {

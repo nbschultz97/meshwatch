@@ -1,5 +1,7 @@
+using Toybox.Attention;
 using Toybox.BluetoothLowEnergy as Ble;
 using Toybox.System;
+using Toybox.Time;
 using Toybox.WatchUi;
 
 // BLE link to a Meshtastic node. Deliberately uses plain pairDevice() —
@@ -245,6 +247,9 @@ class MeshClient extends Ble.BleDelegate {
         if (value != null && value.size() > 0) {
             var what = Proto.parseFromRadio(value, mStore);
             System.println("fromRadio " + value.size() + "b -> " + what);
+            if (what == :message) {
+                buzz();
+            }
             WatchUi.requestUpdate();
             drainFromRadio(); // keep reading until the radio returns empty
         } else {
@@ -260,6 +265,53 @@ class MeshClient extends Ble.BleDelegate {
         if (state == S_READY || state == S_SYNCING) {
             drainFromRadio();
         }
+    }
+
+    function buzz() {
+        if (Attention has :vibrate) {
+            Attention.vibrate([new Attention.VibeProfile(75, 400)]);
+        }
+    }
+
+    // Broadcasts a text on the primary channel. Returns a short status
+    // string for the UI.
+    function sendText(text) {
+        if (deviceName != null && deviceName.equals("DEMO")) {
+            mStore.addMessage(mStore.myNum, text, true);
+            mStore.addMessage(0x10000002l, "rgr: " + text, false);
+            buzz();
+            WatchUi.requestUpdate();
+            return "sent (demo)";
+        }
+        if (state != S_READY || mToRadio == null) {
+            return "no link";
+        }
+        try {
+            mToRadio.requestWrite(Proto.encodeTextMessage(text),
+                {:writeType => Ble.WRITE_TYPE_DEFAULT});
+            mStore.addMessage(mStore.myNum, text, true);
+            WatchUi.requestUpdate();
+            return "sending";
+        } catch (e) {
+            return "send failed";
+        }
+    }
+
+    function loadDemoData() {
+        var now = Time.now().value();
+        deviceName = "DEMO";
+        state = S_READY;
+        mStore.myNum = 0x10000001l;
+        mStore.upsert(0x10000001l, {:shortName => "NOAH", :longName => "tactix 7 (you)",
+            :battery => 88, :lastHeard => now});
+        mStore.upsert(0x10000002l, {:shortName => "OS01", :longName => "Outstation01",
+            :battery => 101, :lastHeard => now - 42, :snr => 8.5});
+        mStore.upsert(0x10000003l, {:shortName => "OS02", :longName => "Outstation02 (pi12)",
+            :battery => 64, :lastHeard => now - 380, :hops => 1});
+        mStore.upsert(0x10000004l, {:shortName => "PCKT", :longName => "PICKET UGV",
+            :battery => 77, :lastHeard => now - 7200, :hops => 2});
+        mStore.packetCount = 17;
+        WatchUi.requestUpdate();
     }
 
     function stateText() {

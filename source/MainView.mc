@@ -9,6 +9,9 @@ class MainView extends WatchUi.View {
     var mStore;
     var mTimer;
     var scrollOfs = 0;
+    var mode = :nodes;   // :nodes | :msgs
+    var flash = null;    // transient status line (e.g. send result)
+    var flashUntil = 0;
 
     const ROW_H = 52;
     const AMBER = 0xFFB020;
@@ -35,14 +38,29 @@ class MainView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
+    function toggleMode() {
+        mode = (mode == :nodes) ? :msgs : :nodes;
+        scrollOfs = 0;
+        if (mode == :msgs) {
+            mStore.unread = 0;
+        }
+        WatchUi.requestUpdate();
+    }
+
+    function showFlash(text) {
+        flash = text;
+        flashUntil = Time.now().value() + 3;
+        WatchUi.requestUpdate();
+    }
+
     function scroll(delta) {
         scrollOfs += delta;
-        if (scrollOfs < 0) {
-            scrollOfs = 0;
-        }
-        var max = mStore.count() - 1;
+        var max = ((mode == :nodes) ? mStore.count() : mStore.messages.size()) - 1;
         if (max < 0) {
             max = 0;
+        }
+        if (scrollOfs < 0) {
+            scrollOfs = 0;
         }
         if (scrollOfs > max) {
             scrollOfs = max;
@@ -53,17 +71,26 @@ class MainView extends WatchUi.View {
     function onUpdate(dc) {
         var w = dc.getWidth();
         var h = dc.getHeight();
+        var now = Time.now().value();
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
 
-        // header: app name + link state
         dc.setColor(AMBER, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 26, Graphics.FONT_TINY, "HELIOGRAPH",
+        dc.drawText(w / 2, 26, Graphics.FONT_TINY,
+            (mode == :nodes) ? "HELIOGRAPH" : "MESSAGES",
             Graphics.TEXT_JUSTIFY_CENTER);
 
-        var status = mClient.stateText();
-        if (mClient.deviceName != null && mClient.state == mClient.S_READY) {
-            status = mClient.deviceName + "  (" + status + ")";
+        var status;
+        if (flash != null && now < flashUntil) {
+            status = flash;
+        } else {
+            status = mClient.stateText();
+            if (mClient.deviceName != null && mClient.state == mClient.S_READY) {
+                status = mClient.deviceName + "  (" + status + ")";
+            }
+            if (mStore.unread > 0 && mode == :nodes) {
+                status = "[" + mStore.unread + " new] " + status;
+            }
         }
         dc.setColor(mClient.state == mClient.S_READY
                 ? Graphics.COLOR_GREEN : Graphics.COLOR_LT_GRAY,
@@ -71,16 +98,30 @@ class MainView extends WatchUi.View {
         dc.drawText(w / 2, 58, Graphics.FONT_XTINY, status,
             Graphics.TEXT_JUSTIFY_CENTER);
 
-        // node rows
+        if (mode == :nodes) {
+            drawNodes(dc, w, h, now);
+        } else {
+            drawMessages(dc, w, h, now);
+        }
+
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h - 32, Graphics.FONT_XTINY,
+            (mode == :nodes)
+                ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
+                : "START to send",
+            Graphics.TEXT_JUSTIFY_CENTER);
+    }
+
+    function drawNodes(dc, w, h, now) {
         var top = 96;
         var visible = (h - top - 30) / ROW_H;
-        var now = Time.now().value();
         var n = mStore.count();
 
         if (n == 0) {
             dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
             dc.drawText(w / 2, h / 2, Graphics.FONT_TINY, "no nodes yet",
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
         }
 
         for (var i = 0; i < visible; i++) {
@@ -127,12 +168,40 @@ class MainView extends WatchUi.View {
                     Graphics.TEXT_JUSTIFY_LEFT);
             }
         }
+    }
 
-        // footer: counts
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h - 32, Graphics.FONT_XTINY,
-            n + " nodes  " + mStore.packetCount + " pkts",
-            Graphics.TEXT_JUSTIFY_CENTER);
+    function drawMessages(dc, w, h, now) {
+        var top = 96;
+        var visible = (h - top - 30) / ROW_H;
+        var msgs = mStore.messages;
+
+        if (msgs.size() == 0) {
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2, Graphics.FONT_TINY, "no messages",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+
+        for (var i = 0; i < visible; i++) {
+            var idx = scrollOfs + i;
+            if (idx >= msgs.size()) {
+                break;
+            }
+            var m = msgs[idx];
+            var y = top + i * ROW_H;
+            var out = m.get(:out) == true;
+            var who = out ? "you" : mStore.nameFor(m.get(:from));
+
+            dc.setColor(out ? Graphics.COLOR_DK_GRAY : AMBER,
+                Graphics.COLOR_TRANSPARENT);
+            dc.drawText(70, y, Graphics.FONT_XTINY,
+                who + "  " + ageText(now - m.get(:ts)),
+                Graphics.TEXT_JUSTIFY_LEFT);
+
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(70, y + 20, Graphics.FONT_SMALL, m.get(:text),
+                Graphics.TEXT_JUSTIFY_LEFT);
+        }
     }
 
     function ageText(secs) {
