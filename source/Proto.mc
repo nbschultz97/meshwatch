@@ -83,13 +83,22 @@ module Proto {
         return out;
     }
 
+    // Build a String from raw bytes without StringUtil (utf8ArrayToString
+    // faults on a ByteArray here). Node names are ASCII; keep it simple and
+    // drop non-printable/truncated garbage.
     function bytesToString(b) {
-        try {
-            var s = StringUtil.utf8ArrayToString(b);
-            if (s != null && s.length() > 0) {
-                return s;
+        var s = "";
+        for (var i = 0; i < b.size(); i++) {
+            var c = b[i] & 0xff;
+            if (c == 0) {
+                break;
             }
-        } catch (e) {
+            if (c >= 32 && c < 127) {
+                s += c.toChar().toString();
+            }
+        }
+        if (s.length() > 0) {
+            return s;
         }
         return "?";
     }
@@ -116,8 +125,10 @@ module Proto {
                 r = readVarint(b, pos);
                 var len = r[0].toNumber();
                 pos = r[1];
-                var sub = b.slice(pos, pos + len);
-                pos += len;
+                var subEnd = pos + len;
+                if (subEnd > b.size()) { subEnd = b.size(); } // salvage partial
+                var sub = b.slice(pos, subEnd);
+                pos = subEnd;
                 if (field == 3) {
                     parseMyInfo(sub, store);
                     result = :myinfo;
@@ -162,8 +173,10 @@ module Proto {
                 r = readVarint(b, pos);
                 var len = r[0].toNumber();
                 pos = r[1];
-                var sub = b.slice(pos, pos + len);
-                pos += len;
+                var subEnd = pos + len;
+                if (subEnd > b.size()) { subEnd = b.size(); } // salvage partial
+                var sub = b.slice(pos, subEnd);
+                pos = subEnd;
                 if (field == 4) {
                     var dpos = 0;
                     while (dpos < sub.size()) {
@@ -182,6 +195,7 @@ module Proto {
                             dr = readVarint(sub, dpos);
                             var dlen = dr[0].toNumber();
                             dpos = dr[1];
+                            if (dpos + dlen > sub.size()) { break; }
                             if (dfield == 2) {
                                 payload = sub.slice(dpos, dpos + dlen);
                             }
@@ -196,6 +210,7 @@ module Proto {
                     }
                 }
             } else if (wire == 5) {
+                if (pos + 4 > b.size()) { break; }
                 if (field == 1) {
                     from = b.decodeNumber(Lang.NUMBER_FORMAT_UINT32,
                         {:offset => pos, :endianness => Lang.ENDIAN_LITTLE});
@@ -264,14 +279,17 @@ module Proto {
                 r = readVarint(b, pos);
                 var len = r[0].toNumber();
                 pos = r[1];
-                var sub = b.slice(pos, pos + len);
-                pos += len;
+                var subEnd = pos + len;
+                if (subEnd > b.size()) { subEnd = b.size(); } // salvage partial
+                var sub = b.slice(pos, subEnd);
+                pos = subEnd;
                 if (field == 2) {
                     parseUser(sub, info);
                 } else if (field == 6) {
                     parseDeviceMetrics(sub, info);
                 }
             } else if (wire == 5) {
+                if (pos + 4 > b.size()) { break; }
                 if (field == 4) {
                     info.put(:snr, b.decodeNumber(Lang.NUMBER_FORMAT_FLOAT,
                         {:offset => pos, :endianness => Lang.ENDIAN_LITTLE}));
@@ -303,8 +321,10 @@ module Proto {
                 r = readVarint(b, pos);
                 var len = r[0].toNumber();
                 pos = r[1];
-                var sub = b.slice(pos, pos + len);
-                pos += len;
+                var subEnd = pos + len;
+                if (subEnd > b.size()) { subEnd = b.size(); } // salvage partial
+                var sub = b.slice(pos, subEnd);
+                pos = subEnd;
                 if (field == 2) {
                     info.put(:longName, bytesToString(sub));
                 } else if (field == 3) {

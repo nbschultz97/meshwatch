@@ -2,6 +2,7 @@ using Toybox.Attention;
 using Toybox.BluetoothLowEnergy as Ble;
 using Toybox.System;
 using Toybox.Time;
+using Toybox.Timer;
 using Toybox.WatchUi;
 
 // BLE link to a Meshtastic node. Deliberately uses plain pairDevice() —
@@ -41,12 +42,24 @@ class MeshClient extends Ble.BleDelegate {
     var mFromNum = null;
     var mSvcUuid;
     var mReadsInFlight = false;
+    var mRebondTried = false;  // one automatic unpair+rebond on a read auth error
+    var mSyncTimer = null;
+    var mSyncAttempts = 0;     // empty-read retries while draining config
 
     // debug HUD counters (shown on screen while we shake out the BLE flow)
     var dbgReads = 0;
     var dbgBytes = 0;
     var dbgLast = 0;
+    var dbgMax = 0;
     var dbgKind = "-";
+    var mTrace = "";
+
+    // append a step to the on-screen flow trace
+    function tr(s) {
+        mTrace += s;
+        dbgKind = mTrace;
+        WatchUi.requestUpdate();
+    }
 
     function initialize(store) {
         BleDelegate.initialize();
@@ -90,15 +103,10 @@ class MeshClient extends Ble.BleDelegate {
     }
 
     function shutdown() {
+        // Keep the bond so the next launch reconnects fast; just stop scanning.
         try {
             Ble.setScanState(Ble.SCAN_STATE_OFF);
         } catch (e) {
-        }
-        if (mDevice != null) {
-            try {
-                Ble.unpairDevice(mDevice);
-            } catch (e) {
-            }
         }
     }
 
@@ -140,6 +148,8 @@ class MeshClient extends Ble.BleDelegate {
                 try {
                     Ble.setScanState(Ble.SCAN_STATE_OFF);
                     state = S_CONNECTING;
+                    mTrace = "";
+                    tr("sc");
                     mDevice = Ble.pairDevice(sr);
                 } catch (e) {
                     fail("pair: " + e.getErrorMessage());
@@ -169,15 +179,18 @@ class MeshClient extends Ble.BleDelegate {
         System.println("conn state=" + connState);
         if (connState == Ble.CONNECTION_STATE_CONNECTED) {
             mDevice = device;
+            tr("C");
             // Meshtastic's fromRadio/notify require an encrypted bond; reading
             // before bonding returns STATUS_GATT_INSUFFICIENT_AUTHENTICATION.
             if (device.isBonded()) {
+                tr("b1");
                 beginSync(device);
             } else {
+                tr("b0");
                 state = S_BONDING;
-                dbgKind = "bonding";
                 try {
                     device.requestBond();
+                    tr("rq");
                 } catch (e) {
                     fail("bond: " + e.getErrorMessage());
                 }
@@ -197,7 +210,7 @@ class MeshClient extends Ble.BleDelegate {
 
     // Called after requestBond() completes (or a prior bond re-established).
     function onEncryptionStatus(device, status) {
-        dbgKind = "enc" + status;
+        tr("e" + status);
         System.println("encryption status=" + status);
         if (status == Ble.STATUS_SUCCESS) {
             mDevice = device;
@@ -205,7 +218,6 @@ class MeshClient extends Ble.BleDelegate {
         } else {
             fail("bond failed " + status);
         }
-        WatchUi.requestUpdate();
     }
 
     // Bonded and ready: grab characteristics, enable notify, request config.
@@ -225,6 +237,7 @@ class MeshClient extends Ble.BleDelegate {
             fail("chars missing");
             return;
         }
+        tr("S");
         state = S_ENABLING;
         if (mFromNum != null) {
             try {
@@ -240,12 +253,14 @@ class MeshClient extends Ble.BleDelegate {
     }
 
     function onDescriptorWrite(descriptor, status) {
+        tr("d" + status);
         System.println("cccd write status=" + status);
         requestConfig();
     }
 
     function requestConfig() {
         state = S_SYNCING;
+        mSyncAttempts = 0;
         try {
             mToRadio.requestWrite(Proto.encodeWantConfig(0x4e53), // "NS"
                 {:writeType => Ble.WRITE_TYPE_DEFAULT});
@@ -255,7 +270,22 @@ class MeshClient extends Ble.BleDelegate {
         WatchUi.requestUpdate();
     }
 
+    // The node queues its config dump a few ms after want_config; an immediate
+    // read can beat it and return empty. Retry a handful of times before
+    // concluding the stream is drained.
+    function scheduleRetry() {
+        if (mSyncTimer == null) {
+            mSyncTimer = new Timer.Timer();
+        }
+        mSyncTimer.start(method(:onSyncRetry), 300, false);
+    }
+
+    function onSyncRetry() as Void {
+        drainFromRadio();
+    }
+
     function onCharacteristicWrite(characteristic, status) {
+        tr("w" + status);
         System.println("char write status=" + status);
         if (status == Ble.STATUS_SUCCESS) {
             drainFromRadio();
@@ -279,28 +309,46 @@ class MeshClient extends Ble.BleDelegate {
     function onCharacteristicRead(characteristic, status, value) {
         mReadsInFlight = false;
         if (status != Ble.STATUS_SUCCESS) {
-            dbgKind = "readErr" + status;
+            tr("r" + status);
             System.println("read status=" + status);
-            WatchUi.requestUpdate();
+            // stale bond from a prior pairing mode: forget it and re-bond once
+            if (!mRebondTried) {
+                mRebondTried = true;
+                tr("RB");
+                forceRebond();
+            }
             return;
         }
-        dbgReads++;
         if (value != null && value.size() > 0) {
+            dbgReads++;
             dbgBytes += value.size();
             dbgLast = value.size();
-            var what = Proto.parseFromRadio(value, mStore);
-            dbgKind = what.toString();
+            if (value.size() > dbgMax) { dbgMax = value.size(); }
+            mSyncAttempts = 0; // got data; reset the empty-read budget
+            var what = :other;
+            try {
+                what = Proto.parseFromRadio(value, mStore);
+            } catch (e) {
+                tr("PX"); // parse threw: skip this packet, keep draining
+            }
             System.println("fromRadio " + value.size() + "b -> " + what);
             if (what == :message) {
                 buzz();
             }
+            if (what == :complete) {
+                tr("done");
+                state = S_READY;
+                mRebondTried = false;
+            } else {
+                drainFromRadio(); // more packets queued; read the next now
+            }
             WatchUi.requestUpdate();
-            drainFromRadio(); // keep reading until the radio returns empty
         } else {
             dbgLast = 0;
-            dbgKind = "empty";
-            if (state == S_SYNCING) {
-                state = S_READY;
+            // empty during sync: node may not have queued yet — retry briefly
+            if (state == S_SYNCING && mSyncAttempts < 25) {
+                mSyncAttempts++;
+                scheduleRetry();
             }
             WatchUi.requestUpdate();
         }
@@ -308,9 +356,26 @@ class MeshClient extends Ble.BleDelegate {
 
     function onCharacteristicChanged(characteristic, value) {
         // fromNum notify: new FromRadio data queued on the node
+        tr("N");
         if (state == S_READY || state == S_SYNCING) {
             drainFromRadio();
         }
+    }
+
+    // Drop the current (possibly stale) bond and scan again for a fresh pair.
+    function forceRebond() {
+        try {
+            if (mDevice != null) {
+                Ble.unpairDevice(mDevice);
+            }
+        } catch (e) {
+        }
+        mDevice = null;
+        mToRadio = null;
+        mFromRadio = null;
+        mFromNum = null;
+        mReadsInFlight = false;
+        startScan();
     }
 
     function buzz() {

@@ -117,7 +117,7 @@ class MainView extends WatchUi.View {
         dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
             "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
-                + " l" + mClient.dbgLast + " " + mClient.dbgKind,
+                + " mx" + mClient.dbgMax + " " + mClient.dbgKind,
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 
