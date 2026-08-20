@@ -1,3 +1,6 @@
 bin/
 *.prg
 *.prg.debug.xml
+
+# PlatformIO build cache
+gateway/.pio/
