@@ -9,9 +9,11 @@ class MainView extends WatchUi.View {
     var mStore;
     var mTimer;
     var scrollOfs = 0;
-    var mode = :nodes;   // :nodes | :msgs
+    var mode = :nodes;   // :nodes | :msgs | :image
     var flash = null;    // transient status line (e.g. send result)
     var flashUntil = 0;
+    var mBmp = null;     // cached rendered photo
+    var mBmpVersion = -1;
 
     const ROW_H = 52;
     const AMBER = 0xFFB020;
@@ -229,28 +231,45 @@ class MainView extends WatchUi.View {
     }
 
     function drawImage(dc, w, h) {
-        var buf = mClient.mImgBuf;
-        if (buf == null || buf.size() < 2048) {
+        // heavy render happens once per image, into a cached bitmap; the
+        // per-frame path is a single scaled blit (avoids the watchdog).
+        if (mClient.mImgVersion <= 0) {
             dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-            var pct = (buf == null) ? 0 : (mClient.mImgSeen * 100 / 128);
-            dc.drawText(w / 2, h / 2, Graphics.FONT_TINY,
-                (buf == null) ? "no photo (START menu)" : "receiving " + pct + "%",
+            var msg = "no photo (START menu)";
+            if (mClient.mImgSeen > 0) {
+                msg = "receiving " + (mClient.mImgSeen * 100 / 128) + "%";
+            }
+            dc.drawText(w / 2, h / 2, Graphics.FONT_TINY, msg,
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             return;
         }
-        // 64x64, 4-bit grayscale, 2 px/byte, 32 bytes/row
-        var scale = 5;
-        var side = 64 * scale;
-        var ox = (w - side) / 2;
-        var oy = 88;
+        if (mBmpVersion != mClient.mImgVersion) {
+            buildBitmap();
+            mBmpVersion = mClient.mImgVersion;
+        }
+        var side = 320;
+        if (mBmp != null) {
+            dc.drawScaledBitmap((w - side) / 2, 88, side, side, mBmp);
+        }
+    }
+
+    // Render the 64x64 4-bit buffer into a native bitmap once.
+    function buildBitmap() {
+        var buf = mClient.mImgBuf;
+        if (buf == null || buf.size() < 2048) {
+            return;
+        }
+        var ref = Graphics.createBufferedBitmap({:width => 64, :height => 64});
+        mBmp = ref.get();
+        var bdc = mBmp.getDc();
         for (var y = 0; y < 64; y++) {
             var rowbase = y * 32;
             for (var x = 0; x < 64; x++) {
                 var byte = buf[rowbase + (x / 2)];
                 var nib = (x % 2 == 0) ? ((byte >> 4) & 0x0f) : (byte & 0x0f);
                 var g = nib * 17;
-                dc.setColor((g << 16) | (g << 8) | g, Graphics.COLOR_TRANSPARENT);
-                dc.fillRectangle(ox + x * scale, oy + y * scale, scale, scale);
+                bdc.setColor((g << 16) | (g << 8) | g, Graphics.COLOR_TRANSPARENT);
+                bdc.drawPoint(x, y);
             }
         }
     }

@@ -38,6 +38,7 @@ class GatewayClient extends Ble.BleDelegate {
     var mImgBuf = null;   // 2048B = 64x64 4-bit grayscale
     var mImgSeen = 0;
     var mImgReady = false; // set when a fresh image finishes arriving
+    var mImgVersion = 0;   // bumps each completed image (cache invalidation)
 
     // debug HUD
     var dbgReads = 0;
@@ -294,12 +295,13 @@ class GatewayClient extends Ble.BleDelegate {
             mImgSeen = 0;
         }
         var base = seq * 16;
-        for (var i = 0; i < 16 && (base + i) < 2048; i++) {
+        for (var i = 0; i < 16 && (base + i) < 2048 && (2 + i) < v.size(); i++) {
             mImgBuf[base + i] = v[2 + i];
         }
         mImgSeen++;
         if (seq == 127) {      // last chunk of a 128-frame image
             mImgReady = true;
+            mImgVersion++;
             buzz();
         }
     }
