@@ -29,6 +29,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
         for (var i = 0; i < CANNED.size(); i++) {
             menu.addItem(new WatchUi.MenuItem(CANNED[i], null, CANNED[i], {}));
         }
+        menu.addItem(new WatchUi.MenuItem("Type...", null, :type, {}));
         menu.addItem(new WatchUi.MenuItem("Rescan", null, :rescan, {}));
         menu.addItem(new WatchUi.MenuItem("Demo data", null, :demo, {}));
         WatchUi.pushView(menu, new SendMenuDelegate(mView, mClient),
@@ -62,8 +63,34 @@ class SendMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :rescan) {
             mClient.restart();
             mView.showFlash("rescanning");
+        } else if (id == :type) {
+            WatchUi.pushView(new WatchUi.TextPicker(""),
+                new TypeDelegate(mView, mClient), WatchUi.SLIDE_LEFT);
         } else {
             mView.showFlash(mClient.sendText(id));
         }
+    }
+}
+
+// On-screen keyboard for freeform messages.
+class TypeDelegate extends WatchUi.TextPickerDelegate {
+    var mView;
+    var mClient;
+
+    function initialize(view, client) {
+        TextPickerDelegate.initialize();
+        mView = view;
+        mClient = client;
+    }
+
+    function onTextEntered(text, changed) {
+        if (text != null && text.length() > 0) {
+            mView.showFlash(mClient.sendText(text));
+        }
+        return true;
+    }
+
+    function onCancel() {
+        return true;
     }
 }
