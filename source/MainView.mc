@@ -104,11 +104,20 @@ class MainView extends WatchUi.View {
             drawMessages(dc, w, h, now);
         }
 
+        // kept in the wide center band; a round display clips wide text at the
+        // very top/bottom edges
         dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h - 32, Graphics.FONT_XTINY,
+        dc.drawText(w / 2, h / 2 + 66, Graphics.FONT_XTINY,
             (mode == :nodes)
                 ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
                 : "START to send",
+            Graphics.TEXT_JUSTIFY_CENTER);
+
+        // debug HUD: reads / total bytes / last read size / last parse kind
+        dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
+            "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
+                + " l" + mClient.dbgLast + " " + mClient.dbgKind,
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 

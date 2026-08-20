@@ -5,7 +5,7 @@
                     launcherIcon="@Drawables.LauncherIcon"
                     name="@Strings.AppName"
                     type="watch-app"
-                    minApiLevel="3.3.0">
+                    minApiLevel="5.0.0">
         <iq:products>
             <!-- tactix 7 AMOLED shares the epix Pro Gen2 51mm CIQ identity -->
             <iq:product id="epix2pro51mm"/>

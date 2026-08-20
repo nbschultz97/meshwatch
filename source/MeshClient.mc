@@ -23,6 +23,7 @@ class MeshClient extends Ble.BleDelegate {
         S_REGISTERING,
         S_SCANNING,
         S_CONNECTING,
+        S_BONDING,
         S_ENABLING,
         S_SYNCING,
         S_READY,
@@ -40,6 +41,12 @@ class MeshClient extends Ble.BleDelegate {
     var mFromNum = null;
     var mSvcUuid;
     var mReadsInFlight = false;
+
+    // debug HUD counters (shown on screen while we shake out the BLE flow)
+    var dbgReads = 0;
+    var dbgBytes = 0;
+    var dbgLast = 0;
+    var dbgKind = "-";
 
     function initialize(store) {
         BleDelegate.initialize();
@@ -161,32 +168,19 @@ class MeshClient extends Ble.BleDelegate {
     function onConnectedStateChanged(device, connState) {
         System.println("conn state=" + connState);
         if (connState == Ble.CONNECTION_STATE_CONNECTED) {
-            var svc = device.getService(mSvcUuid);
-            if (svc == null) {
-                fail("no meshtastic svc");
-                return;
-            }
-            mToRadio = svc.getCharacteristic(Ble.stringToUuid(TORADIO_UUID));
-            mFromRadio = svc.getCharacteristic(Ble.stringToUuid(FROMRADIO_UUID));
-            if (mFromRadio == null) {
-                mFromRadio = svc.getCharacteristic(Ble.stringToUuid(FROMRADIO_ALT));
-            }
-            mFromNum = svc.getCharacteristic(Ble.stringToUuid(FROMNUM_UUID));
-            if (mToRadio == null || mFromRadio == null) {
-                fail("chars missing");
-                return;
-            }
-            state = S_ENABLING;
-            if (mFromNum != null) {
-                try {
-                    var cccd = mFromNum.getDescriptor(Ble.cccdUuid());
-                    cccd.requestWrite([0x01, 0x00]b);
-                } catch (e) {
-                    // notifications are an optimization; go straight to config
-                    requestConfig();
-                }
+            mDevice = device;
+            // Meshtastic's fromRadio/notify require an encrypted bond; reading
+            // before bonding returns STATUS_GATT_INSUFFICIENT_AUTHENTICATION.
+            if (device.isBonded()) {
+                beginSync(device);
             } else {
-                requestConfig();
+                state = S_BONDING;
+                dbgKind = "bonding";
+                try {
+                    device.requestBond();
+                } catch (e) {
+                    fail("bond: " + e.getErrorMessage());
+                }
             }
         } else {
             // dropped: node rebooted or walked out of range — rescan
@@ -197,6 +191,50 @@ class MeshClient extends Ble.BleDelegate {
             if (state != S_IDLE && state != S_ERROR) {
                 startScan();
             }
+        }
+        WatchUi.requestUpdate();
+    }
+
+    // Called after requestBond() completes (or a prior bond re-established).
+    function onEncryptionStatus(device, status) {
+        dbgKind = "enc" + status;
+        System.println("encryption status=" + status);
+        if (status == Ble.STATUS_SUCCESS) {
+            mDevice = device;
+            beginSync(device);
+        } else {
+            fail("bond failed " + status);
+        }
+        WatchUi.requestUpdate();
+    }
+
+    // Bonded and ready: grab characteristics, enable notify, request config.
+    function beginSync(device) {
+        var svc = device.getService(mSvcUuid);
+        if (svc == null) {
+            fail("no meshtastic svc");
+            return;
+        }
+        mToRadio = svc.getCharacteristic(Ble.stringToUuid(TORADIO_UUID));
+        mFromRadio = svc.getCharacteristic(Ble.stringToUuid(FROMRADIO_UUID));
+        if (mFromRadio == null) {
+            mFromRadio = svc.getCharacteristic(Ble.stringToUuid(FROMRADIO_ALT));
+        }
+        mFromNum = svc.getCharacteristic(Ble.stringToUuid(FROMNUM_UUID));
+        if (mToRadio == null || mFromRadio == null) {
+            fail("chars missing");
+            return;
+        }
+        state = S_ENABLING;
+        if (mFromNum != null) {
+            try {
+                var cccd = mFromNum.getDescriptor(Ble.cccdUuid());
+                cccd.requestWrite([0x01, 0x00]b);
+            } catch (e) {
+                requestConfig(); // notify is an optimization; press on
+            }
+        } else {
+            requestConfig();
         }
         WatchUi.requestUpdate();
     }
@@ -241,11 +279,17 @@ class MeshClient extends Ble.BleDelegate {
     function onCharacteristicRead(characteristic, status, value) {
         mReadsInFlight = false;
         if (status != Ble.STATUS_SUCCESS) {
+            dbgKind = "readErr" + status;
             System.println("read status=" + status);
+            WatchUi.requestUpdate();
             return;
         }
+        dbgReads++;
         if (value != null && value.size() > 0) {
+            dbgBytes += value.size();
+            dbgLast = value.size();
             var what = Proto.parseFromRadio(value, mStore);
+            dbgKind = what.toString();
             System.println("fromRadio " + value.size() + "b -> " + what);
             if (what == :message) {
                 buzz();
@@ -253,6 +297,8 @@ class MeshClient extends Ble.BleDelegate {
             WatchUi.requestUpdate();
             drainFromRadio(); // keep reading until the radio returns empty
         } else {
+            dbgLast = 0;
+            dbgKind = "empty";
             if (state == S_SYNCING) {
                 state = S_READY;
             }
@@ -318,6 +364,7 @@ class MeshClient extends Ble.BleDelegate {
         if (state == S_REGISTERING) { return "starting BLE"; }
         if (state == S_SCANNING)    { return "scanning..."; }
         if (state == S_CONNECTING)  { return "connecting"; }
+        if (state == S_BONDING)     { return "bonding"; }
         if (state == S_ENABLING)    { return "enabling notify"; }
         if (state == S_SYNCING)     { return "syncing nodes"; }
         if (state == S_READY)       { return "live"; }
