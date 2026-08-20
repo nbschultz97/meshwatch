@@ -20,7 +20,7 @@ class HeliographApp extends Application.AppBase {
 
     function getInitialView() {
         mStore = new NodeStore();
-        mClient = new MeshClient(mStore);
+        mClient = new GatewayClient(mStore);
         var view = new MainView(mClient, mStore);
         mClient.start();
         return [view, new MainDelegate(view, mClient)];
