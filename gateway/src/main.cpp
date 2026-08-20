@@ -24,6 +24,7 @@
 #include <deque>
 #include <vector>
 #include <string>
+#include "picket_thumb.h"   // IMG_DATA[2048] = 64x64 4-bit grayscale
 
 static const char* SVC_UUID = "a3c8f000-7b1e-4c9a-9f0e-1234567890ab";
 static const char* TX_UUID  = "a3c8f001-7b1e-4c9a-9f0e-1234567890ab";
@@ -71,6 +72,18 @@ static void pushMessage(const std::string& text) {
     } while (off < text.size());
 }
 
+// IMAGE frame: [0x03][seq:1][16 data bytes]. 2048B / 16 = 128 frames.
+// Watch knows it's 64x64 4-bit and places each chunk at seq*16.
+static void pushImage() {
+    for (int seq = 0; seq < 128; seq++) {
+        std::vector<uint8_t> f;
+        f.push_back(0x03);
+        f.push_back((uint8_t)seq);
+        for (int i = 0; i < 16; i++) { f.push_back(IMG_DATA[seq * 16 + i]); }
+        txQueue.push_back(f);
+    }
+}
+
 static void notifyReady() {
     if (txChar) {
         uint8_t one = 1;
@@ -106,6 +119,9 @@ class RxCallbacks : public NimBLECharacteristicCallbacks {
         } else if (cmd == 0x02) {     // SEND -> echo back as inbound
             std::string body = v.substr(1);
             pushMessage("echo: " + body);
+            notifyReady();
+        } else if (cmd == 0x03) {     // GETIMG -> stream the detection thumbnail
+            pushImage();
             notifyReady();
         }
     }

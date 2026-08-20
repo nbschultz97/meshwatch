@@ -39,11 +39,15 @@ class MainView extends WatchUi.View {
     }
 
     function toggleMode() {
-        mode = (mode == :nodes) ? :msgs : :nodes;
-        scrollOfs = 0;
-        if (mode == :msgs) {
+        if (mode == :nodes) {
+            mode = :msgs;
             mStore.unread = 0;
+        } else if (mode == :msgs) {
+            mode = :image;
+        } else {
+            mode = :nodes;
         }
+        scrollOfs = 0;
         WatchUi.requestUpdate();
     }
 
@@ -75,9 +79,16 @@ class MainView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
 
+        if (mClient.mImgReady && mode != :image) {
+            mode = :image;       // a fresh photo just finished arriving
+            mClient.mImgReady = false;
+        }
+
+        var title = "HELIOGRAPH";
+        if (mode == :msgs) { title = "MESSAGES"; }
+        else if (mode == :image) { title = "PHOTO"; }
         dc.setColor(AMBER, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, 26, Graphics.FONT_TINY,
-            (mode == :nodes) ? "HELIOGRAPH" : "MESSAGES",
+        dc.drawText(w / 2, 26, Graphics.FONT_TINY, title,
             Graphics.TEXT_JUSTIFY_CENTER);
 
         var status;
@@ -100,25 +111,29 @@ class MainView extends WatchUi.View {
 
         if (mode == :nodes) {
             drawNodes(dc, w, h, now);
-        } else {
+        } else if (mode == :msgs) {
             drawMessages(dc, w, h, now);
+        } else {
+            drawImage(dc, w, h);
         }
 
-        // kept in the wide center band; a round display clips wide text at the
-        // very top/bottom edges
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h / 2 + 66, Graphics.FONT_XTINY,
-            (mode == :nodes)
-                ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
-                : "START to send",
-            Graphics.TEXT_JUSTIFY_CENTER);
+        if (mode != :image) {
+            // kept in the wide center band; a round display clips wide text at
+            // the very top/bottom edges
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 + 66, Graphics.FONT_XTINY,
+                (mode == :nodes)
+                    ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
+                    : "START to send",
+                Graphics.TEXT_JUSTIFY_CENTER);
 
-        // debug HUD: reads / total bytes / last read size / last parse kind
-        dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
-            "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
-                + " mx" + mClient.dbgMax + " " + mClient.dbgKind,
-            Graphics.TEXT_JUSTIFY_CENTER);
+            // debug HUD: reads / total bytes / max read / last parse kind
+            dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
+                "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
+                    + " mx" + mClient.dbgMax + " " + mClient.dbgKind,
+                Graphics.TEXT_JUSTIFY_CENTER);
+        }
     }
 
     function drawNodes(dc, w, h, now) {
@@ -210,6 +225,33 @@ class MainView extends WatchUi.View {
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(70, y + 20, Graphics.FONT_SMALL, m.get(:text),
                 Graphics.TEXT_JUSTIFY_LEFT);
+        }
+    }
+
+    function drawImage(dc, w, h) {
+        var buf = mClient.mImgBuf;
+        if (buf == null || buf.size() < 2048) {
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            var pct = (buf == null) ? 0 : (mClient.mImgSeen * 100 / 128);
+            dc.drawText(w / 2, h / 2, Graphics.FONT_TINY,
+                (buf == null) ? "no photo (START menu)" : "receiving " + pct + "%",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+        // 64x64, 4-bit grayscale, 2 px/byte, 32 bytes/row
+        var scale = 5;
+        var side = 64 * scale;
+        var ox = (w - side) / 2;
+        var oy = 88;
+        for (var y = 0; y < 64; y++) {
+            var rowbase = y * 32;
+            for (var x = 0; x < 64; x++) {
+                var byte = buf[rowbase + (x / 2)];
+                var nib = (x % 2 == 0) ? ((byte >> 4) & 0x0f) : (byte & 0x0f);
+                var g = nib * 17;
+                dc.setColor((g << 16) | (g << 8) | g, Graphics.COLOR_TRANSPARENT);
+                dc.fillRectangle(ox + x * scale, oy + y * scale, scale, scale);
+            }
         }
     }
 

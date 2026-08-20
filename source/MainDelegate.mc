@@ -30,6 +30,7 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
             menu.addItem(new WatchUi.MenuItem(CANNED[i], null, CANNED[i], {}));
         }
         menu.addItem(new WatchUi.MenuItem("Type...", null, :type, {}));
+        menu.addItem(new WatchUi.MenuItem("Get photo", null, :photo, {}));
         menu.addItem(new WatchUi.MenuItem("Rescan", null, :rescan, {}));
         menu.addItem(new WatchUi.MenuItem("Demo data", null, :demo, {}));
         WatchUi.pushView(menu, new SendMenuDelegate(mView, mClient),
@@ -63,6 +64,9 @@ class SendMenuDelegate extends WatchUi.Menu2InputDelegate {
         } else if (id == :rescan) {
             mClient.restart();
             mView.showFlash("rescanning");
+        } else if (id == :photo) {
+            mClient.getImage();
+            mView.showFlash("fetching photo...");
         } else if (id == :type) {
             WatchUi.pushView(new WatchUi.TextPicker(""),
                 new TypeDelegate(mView, mClient), WatchUi.SLIDE_LEFT);

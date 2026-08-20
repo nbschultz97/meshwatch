@@ -35,6 +35,9 @@ class GatewayClient extends Ble.BleDelegate {
     var mSvcUuid;
     var mReadsInFlight = false;
     var mMsgParts = {};   // msg id -> accumulated text
+    var mImgBuf = null;   // 2048B = 64x64 4-bit grayscale
+    var mImgSeen = 0;
+    var mImgReady = false; // set when a fresh image finishes arriving
 
     // debug HUD
     var dbgReads = 0;
@@ -229,6 +232,10 @@ class GatewayClient extends Ble.BleDelegate {
             parseMsg(value);
             dbgKind = "msg";
             drain();
+        } else if (type == 0x03) {     // IMAGE chunk
+            parseImage(value);
+            dbgKind = "img" + mImgSeen;
+            drain();
         } else {
             dbgKind = "?" + type;
             drain();
@@ -276,6 +283,37 @@ class GatewayClient extends Ble.BleDelegate {
             mStore.addMessage(null, acc, false);
             mMsgParts.remove(id);
             buzz();
+        }
+    }
+
+    function parseImage(v) {
+        if (v.size() < 3) { return; }
+        var seq = v[1];
+        if (mImgBuf == null) {
+            mImgBuf = new [2048]b;
+            mImgSeen = 0;
+        }
+        var base = seq * 16;
+        for (var i = 0; i < 16 && (base + i) < 2048; i++) {
+            mImgBuf[base + i] = v[2 + i];
+        }
+        mImgSeen++;
+        if (seq == 127) {      // last chunk of a 128-frame image
+            mImgReady = true;
+            buzz();
+        }
+    }
+
+    // ask the gateway to stream the latest detection thumbnail
+    function getImage() {
+        mImgBuf = null;
+        mImgSeen = 0;
+        mImgReady = false;
+        if (state == S_READY && mRx != null) {
+            try {
+                mRx.requestWrite([0x03]b, {:writeType => Ble.WRITE_TYPE_DEFAULT});
+            } catch (e) {
+            }
         }
     }
 
