@@ -4,3 +4,4 @@ bin/
 
 # PlatformIO build cache
 gateway/.pio/
+breaze/.pio/
