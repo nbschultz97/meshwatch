@@ -61,7 +61,12 @@ public:
     int16_t   lastRssi() const { return _lastRssi; }
 
 private:
-    SX1262 _radio = new Module(SS, 14, BUSY_LoRa, RST_LoRa);
+    // SX1262 wiring for Heltec WiFi LoRa 32 V3 (per pins_arduino.h):
+    //   NSS=SS=8, SCK=9, MOSI=10, MISO=11, RST=RST_LoRa=12, BUSY=BUSY_LoRa=13,
+    //   DIO1=DIO0=14. RadioLib Module() is (CS, IRQ, RST, BUSY). The first
+    //   cut had RST and BUSY swapped which left the chip unresponsive
+    //   (RADIOLIB_ERR_CHIP_NOT_FOUND = -2).
+    SX1262 _radio = new Module(SS, 14, RST_LoRa, BUSY_LoRa);
     bool    _up = false;
     uint8_t _myId = 0;
     uint8_t _seq = 0;
