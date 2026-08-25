@@ -39,6 +39,11 @@
 #define BREAZE_TYPE_TAMPER  0x03  // housing opened / accelerometer spike
 #define BREAZE_TYPE_CONFIG  0x04  // gateway-issued config (ack from node)
 #define BREAZE_TYPE_PING    0x05  // gateway wants a beacon; node replies
+#define BREAZE_TYPE_RELAY   0x10  // wrapped foreign-protocol frame
+                                 // (PICKET cue, Heliograph msg, etc.) that
+                                 // we picked up and rebroadcast so peers
+                                 // downstream can hear it. Each BREAZE node
+                                 // extends the mesh by 1-2 hops for free.
 
 // ---- Sleep/wake intervals -----------------------------------------------
 #define BEACON_INTERVAL_MS  (5UL * 60UL * 1000UL)   // 5 min
