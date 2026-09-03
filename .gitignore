@@ -9,3 +9,6 @@ internal-mir/
 
 # monkeyc debug data; .prg files themselves are committed
 *.prg.debug.xml
+
+# PlatformIO build cache (bridge/)
+.pio/

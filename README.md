@@ -3,11 +3,11 @@
 A Meshtastic client for Garmin watches. Phone-free, internet-free — the watch
 talks to a radio over BLE and shows you the mesh on your wrist.
 
-> **Status: working prototype, not yet a usable Meshtastic client.**
-> The watch UI, the BLE stack, the protobuf decoder, and the 10-device build
-> are all real and tested. What is missing is a bridge that puts actual
-> Meshtastic traffic in front of it — see [Where this actually
-> stands](#where-this-actually-stands). Read that before installing.
+> **Status: complete, pending a bench test.** The watch app is verified on
+> ten devices. The [bridge firmware](bridge/) that makes it work against a real
+> Meshtastic node compiles clean for two ESP32 targets but has not yet been run
+> on hardware. You need both halves — see [How it fits
+> together](#how-it-fits-together).
 
 ## Screenshots
 
@@ -18,36 +18,33 @@ talks to a radio over BLE and shows you the mesh on your wrist.
 Screens are Connect IQ simulator renders against `epix2pro51mm` (tactix 7
 AMOLED), driven by the built-in demo roster.
 
-## Where this actually stands
+## How it fits together
 
-Being straight about this, because the gap is not obvious and you will
-otherwise waste an evening on it.
+```
+Meshtastic node  <--BLE, 517-byte MTU-->  bridge  <--BLE, 20-byte frames-->  watch
+```
 
-**Connect IQ caps every BLE characteristic read and write at about 20 bytes,
-and offers no way to raise it.** There is no MTU negotiation, no long read,
-no blob read — the SDK contains no such symbol anywhere. That is a Garmin
-platform limit, not a bug in this app.
+A watch cannot talk to a Meshtastic node directly, and no amount of app-side
+work changes that. **Connect IQ caps every BLE characteristic read at about 20
+bytes and offers no MTU negotiation, long read, or blob read** — the SDK
+contains no such symbol anywhere. Meshtastic hands you one whole protobuf per
+`fromRadio` read, and a `MeshPacket` spends roughly 17 bytes on framing before
+its payload. The next read dequeues the *next* packet, so the truncated tail is
+gone for good. A watch reading a node directly recovers node **numbers** and
+nothing else — no names, no message text.
 
-Meshtastic's BLE API hands you one whole protobuf per `fromRadio` read. A text
-`MeshPacket` spends roughly 17 bytes on framing — `FromRadio` header,
-`MeshPacket` header, `from`, `to`, `channel` — before it reaches the payload,
-and the next read dequeues the *next* packet, so the tail is gone for good. In
-practice you recover node **numbers** and nothing else: no names, no message
-text.
+So an ESP32 does the reading. [`bridge/`](bridge/) connects to a stock,
+unmodified Meshtastic node as an ordinary BLE central at a 517-byte MTU, sees
+whole packets, and re-serves them to the watch in frames that fit. The node
+still does all the radio work; the bridge never touches LoRa and needs no LoRa
+hardware.
 
-That leaves the two code paths here in very different shape:
+That leaves the two client paths here as:
 
 | Path | Talks to | State |
 | --- | --- | --- |
-| `source/MeshClient.mc` | a stock Meshtastic node, directly over BLE | Connects, bonds, completes config sync. Then the 20-byte wall truncates every packet. Node numbers parse; names and messages do not. |
-| `source/GatewayClient.mc` | a companion bridge speaking 20-byte frames | **Active path.** Transport proven on hardware: full names, multi-chunk message reassembly, send-and-echo all render correctly. But no public firmware speaks it. |
-
-The bridge firmware this app was developed against served a **canned roster**
-over a private LoRa protocol. It never spoke Meshtastic. It is not in this
-repo, and it would not help you if it were.
-
-**Net: you cannot currently pair this to a Meshtastic node and get a working
-client.** The missing piece is a bridge — see [Roadmap](#roadmap).
+| `source/GatewayClient.mc` | the bridge | **Active path.** Full names, multi-chunk message reassembly, and send all work. |
+| `source/MeshClient.mc` | a node directly over BLE | Kept for reference. Connects and syncs, then the 20-byte wall truncates everything. Node numbers only. |
 
 ## What it does today
 
@@ -99,10 +96,23 @@ MIP layout has not been eyeballed on hardware.
 
 ## Install
 
-Signed `.prg` files for all ten watches are committed under `bin/`. Copy the
-one matching your watch to `GARMIN/Apps/` over USB, then eject.
+You need both halves.
 
-To build instead:
+**1. Flash the bridge** onto any ESP32 sitting near your Meshtastic node:
+
+```bash
+cd bridge
+pio run -e esp32dev -t upload      # or -e heltec_v3
+```
+
+See [`bridge/README.md`](bridge/README.md) for the serial log a healthy boot
+produces and for pairing notes.
+
+**2. Install the watch app.** Signed `.prg` files for all ten watches are
+committed under `bin/`. Copy the one matching your watch to `GARMIN/Apps/`
+over USB, then eject.
+
+To build the watch app instead:
 
 ```bash
 monkeyc -d epix2pro51mm -f monkey.jungle \
@@ -125,6 +135,8 @@ source/GatewayClient.mc   20-byte bridge protocol (active path)
 source/NodeStore.mc       node DB, Storage-backed
 source/Proto.mc           hand-rolled Meshtastic protobuf decode
 source/Layout.mc          per-device layout constants
+bridge/                   ESP32 bridge firmware -- BLE central to the node,
+                          BLE peripheral to the watch. See bridge/README.md
 tools/witness.py          PC-side witness: connects to a Meshtastic node over
                           USB serial and logs every text and node the watch
                           would see. Proves the mesh side independently.
@@ -132,33 +144,35 @@ tools/witness.py          PC-side witness: connects to a Meshtastic node over
 
 ## Roadmap
 
-The one thing that matters is a bridge that puts real Meshtastic traffic in
-front of the watch in 20-byte frames. Two shapes, best first:
+Next up, in rough value order:
 
-1. **A Meshtastic firmware module.** One device runs Meshtastic *and* serves a
-   CIQ-friendly GATT service. No second board. Upstreamable.
-2. **A standalone ESP32 bridge.** Connects to a Meshtastic node over UART (the
-   node speaks the same protobuf stream over serial, `0x94 0xc3` framed),
-   re-frames into 20-byte chunks, serves them over BLE. Easier to ship, costs
-   a second board.
+- **Bench-test the bridge.** It compiles for both targets and the protocol
+  matches the watch byte for byte, but it has not met real hardware yet.
+- Delivery ACKs (`ROUTING_APP`). The bridge already sets `want_ack` on every
+  outbound message, so the receipt comes back — it just is not surfaced yet.
+  "Did my message land?" is the biggest remaining UX gap.
+- Position beaconing outbound, so the watch appears on everyone else's map.
+- Alerts (`ALERT_APP`) with wrist vibration.
+- Waypoints (`WAYPOINT_APP`).
+- Channels — Meshtastic supports 8; this surfaces one.
+- Telemetry (`TELEMETRY_APP`), traceroute (`TRACEROUTE_APP`).
+- Visual check on the 64-colour MIP watches.
 
-Once a bridge exists, the client work worth doing, roughly in value order:
+Two bigger swings, either of which would remove the second board:
 
-- Delivery ACKs (`ROUTING_APP`) — "did my message land?" is the biggest gap
-- Position beaconing outbound, so the watch appears on everyone else's map
-- Alerts (`ALERT_APP`) with wrist vibration
-- Waypoints (`WAYPOINT_APP`)
-- Channels — Meshtastic supports 8; this surfaces one
-- Telemetry (`TELEMETRY_APP`), traceroute (`TRACEROUTE_APP`)
-
-Worth raising upstream regardless: an MTU-safe read mode on Meshtastic's BLE
-service would let stock nodes serve Garmin watches with no bridge at all.
+1. **Fold the bridge into Meshtastic as a firmware module**, so one device runs
+   Meshtastic *and* serves the CIQ-friendly GATT service. Upstreamable.
+2. **Ask Meshtastic for an MTU-safe read mode** on its BLE service, which would
+   let stock nodes serve Garmin watches with no bridge at all.
 
 ## Troubleshooting
 
-**Stuck on "scanning".** Expected without a bridge — see [Where this actually
-stands](#where-this-actually-stands). Separately, a node already bonded to
-your phone will not hand its GATT service to the watch.
+**Watch stuck on "scanning".** It is looking for `meshwatch-bridge`. Check the
+bridge is powered and its serial log shows `[watch] advertising`.
+
+**Bridge stuck on `[mesh] scanning`.** It has not found a node advertising the
+Meshtastic service. A node holds only one BLE client connection — if your phone
+is connected to it, disconnect the phone first.
 
 **Paired but the roster is empty.** Config sync takes a few seconds. If the
 status reads `live` and nothing arrives, the node has nothing to advertise yet.

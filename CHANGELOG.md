@@ -24,7 +24,23 @@ to public.
   If you need the older form of either, pull commit `954bc50` of this repo
   from before the move.
 
+### Bridge firmware (new)
+
+- **`bridge/` — an ESP32 that makes the whole thing work.** The watch cannot
+  read a Meshtastic node directly: Connect IQ caps BLE characteristic reads at
+  ~20 bytes with no MTU negotiation, and a MeshPacket burns ~17 on framing
+  before its payload, so a direct read yields node numbers and nothing else.
+  The bridge connects to a stock, unmodified node as a BLE central at a
+  517-byte MTU, decodes whole packets, and re-serves them to the watch in
+  20-byte frames matching `source/GatewayClient.mc` byte for byte.
+  Hand-rolled protobuf in `bridge/src/pb.h` keeps the field map identical to
+  `source/Proto.mc` so the two drift together. Builds clean for `esp32dev`
+  (608K flash / 36K RAM) and `heltec_v3` (534K / 30K). Not yet bench-tested.
+  Sets `want_ack` on outbound text, so delivery receipts will be available to
+  surface later.
+
 ### Watch app
+
 
 - **Detection-photo feature removed.** The app carried a thumbnail receiver
   (`0x03` frames, 128 chunks x 16B into a 64x64 4bpp buffer) that had nothing

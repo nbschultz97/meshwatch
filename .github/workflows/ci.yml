@@ -31,7 +31,7 @@ jobs:
 
           if grep -RInE \
               '\b(PICKET|OS01|OS02|picket-|breaze|gateway/)\b' \
-              source/ tools/ resources/ 2>/dev/null; then
+              source/ tools/ resources/ bridge/src/ 2>/dev/null; then
             echo "::error::Found PICKET-flavored or stale-firmware reference in public source."
             exit 1
           fi
