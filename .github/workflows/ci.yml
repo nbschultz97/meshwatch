@@ -1,0 +1,151 @@
+name: ci
+
+# We can't run the Connect IQ SDK in CI — it's Windows- and macOS-only, and it
+# needs a per-developer signing key. What this workflow CAN do is catch the
+# mistakes a PR is most likely to make: reintroducing PICKET-flavored demo
+# data, dropping a product id from the manifest, leaving a stale `picket/` or
+# `gateway/` reference after the public-release cleanup, or breaking the
+# jungle/manifest pairing.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  repo-integrity:
+    name: repo integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for PICKET-flavored data in public release
+        # The watch app and any docs distributed from this repo must not
+        # contain PICKET-flavored callsigns or demo-roster leftovers.
+        # picket/ is its own private repo; if a future PR reintroduces
+        # PICKET data here, fail loudly.
+        run: |
+          set -euo pipefail
+          echo "Scanning for PICKET-flavored strings in source/ and tools/..."
+
+          if grep -RInE \
+              '\b(PICKET|OS01|OS02|picket-|breaze|gateway/)\b' \
+              source/ tools/ resources/ 2>/dev/null; then
+            echo "::error::Found PICKET-flavored or stale-firmware reference in public source."
+            exit 1
+          fi
+
+          # 0x1000000* node ids were the personal/PICKET mesh range; the
+          # generic demo roster uses 0xA0000001..4. Catch any reintroduction.
+          if grep -RInE '0x1000000[0-9a-fA-F]' source/ 2>/dev/null; then
+            echo "::error::Found legacy PICKET-flavored 0x1000000* node id in source/."
+            exit 1
+          fi
+
+          echo "OK: no PICKET-flavored data in public source."
+
+      - name: Check manifest well-formedness
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          import re, sys
+
+          tree = ET.parse('manifest.xml')
+          root = tree.getroot()
+          ns = {'iq': 'http://www.garmin.com/xml/connectiq'}
+
+          app = root.find('iq:application', ns)
+          assert app is not None, "no <application>"
+
+          # minApiLevel must be one we can actually build against across
+          # the whole product list. fenix6xpro tops out at CIQ 3.4.5.
+          min_api = app.get('minApiLevel', '')
+          m = re.match(r'^(\d+)\.(\d+)\.(\d+)$', min_api)
+          assert m, f"minApiLevel '{min_api}' not in N.N.N form"
+          major = int(m.group(1))
+          assert major <= 3, (
+              f"minApiLevel={min_api} excludes the fenix6xpro (CIQ 3.4.5) "
+              f"and the entire tactix Delta class. Set to 3.x.x.")
+
+          products = [p.get('id') for p in app.findall('iq:products/iq:product', ns)]
+          assert products, "no <product> entries"
+
+          # Every product listed must be one of the device ids we
+          # publicly claim to support. Catch typos like 'fenix8pro47mm'.
+          known = {
+              "fenix6xpro",
+              "fenix7x", "fenix7xpro", "fenix7xpronowifi",
+              "epix2pro51mm",
+              "fenix847mm",
+              "fenix8solar51mm",
+              "descentmk351mm",
+              "marq2", "marq2aviator",
+          }
+          unknown = [p for p in products if p not in known]
+          assert not unknown, f"manifest lists unknown product ids: {unknown}"
+
+          print("OK: manifest is well-formed and lists:", ", ".join(products))
+          PY
+
+      - name: Check README device list matches manifest
+        # If someone adds a product to the manifest but forgets the README
+        # table (or vice-versa), catch it before release.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re, sys, xml.etree.ElementTree as ET
+
+          tree = ET.parse('manifest.xml')
+          ns = {'iq': 'http://www.garmin.com/xml/connectiq'}
+          app = tree.getroot().find('iq:application', ns)
+          manifest_products = {
+              p.get('id') for p in app.findall('iq:products/iq:product', ns)
+          }
+
+          with open('README.md') as f:
+              readme = f.read()
+
+          # Backtick-quoted product ids in the supported-watches table.
+          readme_products = set(re.findall(r'`([a-z0-9]+)`', readme))
+
+          missing_from_readme = manifest_products - readme_products
+          if missing_from_readme:
+              print(f"::error::These product ids are in manifest.xml but not README.md:")
+              for p in sorted(missing_from_readme):
+                  print(f"  - {p}")
+              sys.exit(1)
+
+          print("OK: every manifest product id appears in README.md.")
+          PY
+
+      - name: Check source files compile-parse cleanly
+        # Monkey C is too gnarly to lint in CI, but we can at least make
+        # sure the .mc files balance braces and don't have stray tabs.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, sys
+
+          ok = True
+          for dirpath, _, filenames in os.walk('source'):
+              for fn in filenames:
+                  if not fn.endswith('.mc'):
+                      continue
+                  path = os.path.join(dirpath, fn)
+                  with open(path) as f:
+                      src = f.read()
+                  if src.count('{') != src.count('}'):
+                      print(f"::error::{path}: braces unbalanced "
+                            f"({src.count('{')} open vs {src.count('}')} close)")
+                      ok = False
+                  if src.count('(') != src.count(')'):
+                      print(f"::error::{path}: parens unbalanced "
+                            f"({src.count('(')} open vs {src.count(')')} close)")
+                      ok = False
+                  if '\t' in src:
+                      print(f"::warning::{path}: contains tab characters")
+
+          sys.exit(0 if ok else 1)
+          PY
