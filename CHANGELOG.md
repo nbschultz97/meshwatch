@@ -26,6 +26,20 @@ to public.
 
 ### Watch app
 
+- **Detection-photo feature removed.** The app carried a thumbnail receiver
+  (`0x03` frames, 128 chunks x 16B into a 64x64 4bpp buffer) that had nothing
+  to do with Meshtastic — the protocol has no image port at all, and upstream
+  has said file transfer will not be supported over sub-GHz LoRa. Shipping it
+  in a Meshtastic client implied a protocol feature that does not exist. The
+  full working implementation, including the watchdog-safe BufferedBitmap
+  render, moved to the private project it belongs to; nothing was lost.
+- **README now states the transport situation plainly.** Connect IQ caps BLE
+  characteristic reads and writes at ~20 bytes with no MTU negotiation, which
+  truncates every Meshtastic packet past its header. The bridge firmware this
+  app was developed against served a canned roster over a private LoRa
+  protocol and never spoke Meshtastic. The README says so, rather than
+  implying you can pair to a stock node and get a working client.
+
 - **Multi-watch.** The single `epix2pro51mm` target grew into a 10-product
   manifest covering the round-AMOLED CIQ 3.0+ matrix: tactix Delta class
   (`fenix6xpro`), tactix 7 non-AMOLED (`fenix7x*`), tactix 7 AMOLED

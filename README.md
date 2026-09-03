@@ -1,172 +1,182 @@
 # meshwatch
 
-A Meshtastic client for Garmin watches. Phone-free, internet-free, just the
-watch and a Meshtastic node over BLE.
+A Meshtastic client for Garmin watches. Phone-free, internet-free — the watch
+talks to a radio over BLE and shows you the mesh on your wrist.
 
-The watch is the display. The node is the radio. You get the node list, the
-text channels, and the position stream from the mesh, right on the wrist.
+> **Status: working prototype, not yet a usable Meshtastic client.**
+> The watch UI, the BLE stack, the protobuf decoder, and the 10-device build
+> are all real and tested. What is missing is a bridge that puts actual
+> Meshtastic traffic in front of it — see [Where this actually
+> stands](#where-this-actually-stands). Read that before installing.
 
 ## Screenshots
 
 | Nodes view | Messages view | Canned-message picker |
 | :---: | :---: | :---: |
-| ![nodes view — paired state, WATCH + ALPH roster with battery and last-heard, 1 new message badge](docs/screenshots/01-nodes-view.png) | ![messages view — recent text log: you/ACK/ALPH:hello from a der, START to send prompt](docs/screenshots/02-messages-view.png) | ![canned-message picker — OTW/RTB/HOLD rows selected by UP/DOWN, START to send](docs/screenshots/03-canned-picker.png) |
+| ![nodes view with battery and last-heard, 1 new message badge](docs/screenshots/01-nodes-view.png) | ![messages view with recent text log and START to send prompt](docs/screenshots/02-messages-view.png) | ![canned-message picker showing OTW, RTB, HOLD](docs/screenshots/03-canned-picker.png) |
 
-The roster column on the left is the short name; the right column is battery
-percent plus last-heard age in seconds (or `PWR` when the paired node
-reports its power source rather than a battery). The green `[1 new]` badge
-in the header marks an unread mesh packet — clear it by opening the
-messages view. The footer (`rd0 b0 mx0 -`) is the radio config the watch
-last confirmed from the node: region-disabled, no BLE bonds stored, no
-mesh hops through a repeater, no active hop count.
+Screens are Connect IQ simulator renders against `epix2pro51mm` (tactix 7
+AMOLED), driven by the built-in demo roster.
 
-All three shots are Connect IQ simulator renders against `epix2pro51mm`
-(tactix 7 AMOLED). The app supports nine more device ids — same source,
-per-device layout picked at runtime — see the table below.
+## Where this actually stands
 
-## What it does
+Being straight about this, because the gap is not obvious and you will
+otherwise waste an evening on it.
 
-- Scans for a paired Meshtastic node over BLE (service UUID
-  `6ba1b218-15a8-461f-9fa8-5dcae273eafd`)
-- Maintains a live node DB: short name, long name, battery, last-heard age,
-  SNR, hop count
-- Decodes text messages on the primary channel
-- Reads canned messages and freeform messages from paired nodes
-- Decodes incoming position packets (lat/lon/alt/time)
-- Survives app exit, watch reboot, and battery death — the demo roster
-  reappears on first launch and is replaced the moment a real config sync
-  lands
+**Connect IQ caps every BLE characteristic read and write at about 20 bytes,
+and offers no way to raise it.** There is no MTU negotiation, no long read,
+no blob read — the SDK contains no such symbol anywhere. That is a Garmin
+platform limit, not a bug in this app.
+
+Meshtastic's BLE API hands you one whole protobuf per `fromRadio` read. A text
+`MeshPacket` spends roughly 17 bytes on framing — `FromRadio` header,
+`MeshPacket` header, `from`, `to`, `channel` — before it reaches the payload,
+and the next read dequeues the *next* packet, so the tail is gone for good. In
+practice you recover node **numbers** and nothing else: no names, no message
+text.
+
+That leaves the two code paths here in very different shape:
+
+| Path | Talks to | State |
+| --- | --- | --- |
+| `source/MeshClient.mc` | a stock Meshtastic node, directly over BLE | Connects, bonds, completes config sync. Then the 20-byte wall truncates every packet. Node numbers parse; names and messages do not. |
+| `source/GatewayClient.mc` | a companion bridge speaking 20-byte frames | **Active path.** Transport proven on hardware: full names, multi-chunk message reassembly, send-and-echo all render correctly. But no public firmware speaks it. |
+
+The bridge firmware this app was developed against served a **canned roster**
+over a private LoRa protocol. It never spoke Meshtastic. It is not in this
+repo, and it would not help you if it were.
+
+**Net: you cannot currently pair this to a Meshtastic node and get a working
+client.** The missing piece is a bridge — see [Roadmap](#roadmap).
+
+## What it does today
+
+- Renders a node roster: short name, battery, last-heard age, SNR, hop count
+- Renders a message log; sends canned messages (`ACK` `RGR` `OTW` `RTB`
+  `HOLD` `SOS`) or freeform text via the on-screen keyboard
+- Scans, bonds, and completes a Meshtastic config sync over BLE
+- Hand-rolled Meshtastic protobuf decoding in `source/Proto.mc`, with no
+  runtime protobuf library
+- Runs on ten Garmin devices from one source tree
+- Ships a demo roster on first launch, so the UI is explorable with no radio
 
 ## What it does not do
 
-- No mesh routing. The watch is a leaf; all routing happens on the radio.
-- No store, no phone, no Connect sync. Pairing is over BLE just-works.
-- No solver, no telemetry, no detection logic. The watch displays what the
-  mesh sends.
-- No on-watch node configuration. You configure nodes in the Meshtastic app
-  or via the CLI; the watch reads the result.
+- No mesh routing — the watch is a leaf; routing lives on the radio
+- No phone, no Garmin Connect sync, no internet
+- No on-watch node configuration — configure in the Meshtastic app or CLI
+- **No photo or image transfer.** Meshtastic has no image transport: there is
+  no image port in `PortNum`, and the maintainers have said file transfer will
+  not be supported over sub-GHz LoRa. An earlier build carried a
+  detection-thumbnail feature; it belonged to a different project and has been
+  removed rather than left in to imply a protocol feature that does not exist.
 
 ## Supported watches
 
-Any round AMOLED or 64-color MIP Garmin watch running Connect IQ 3.0 or
-later with Bluetooth Low Energy. There is no `tactix` product id in CIQ — the
-whole tactix line ships under its fenix / epix sibling.
+Any round Garmin watch on Connect IQ 3.0+ with BLE. Note there is no `tactix`
+product id in Connect IQ — the whole tactix line ships under its fenix / epix
+sibling.
 
-| Device id            | Display        | Notes                                |
-| -------------------- | -------------- | ------------------------------------ |
-| `fenix6xpro`         | 280×280 MIP    | tactix Delta class                   |
-| `fenix7x`            | 260×260 MIP    | tactix 7 (non-AMOLED)                |
-| `fenix7xpro`         | 260×260 MIP    |                                      |
-| `fenix7xpronowifi`   | 260×260 MIP    |                                      |
-| `epix2pro51mm`       | 416×416 AMOLED | tactix 7 AMOLED (the original dev target) |
-| `fenix847mm`         | 454×454 AMOLED | tactix 8 / fenix 8 Pro 47            |
-| `fenix8solar51mm`    | 416×416 AMOLED | fenix 8 Solar 51                     |
-| `descentmk351mm`     | 416×416 AMOLED | Descent Mk3 51                       |
-| `marq2`              | 416×416 AMOLED | MARQ Gen 2                           |
-| `marq2aviator`       | 416×416 AMOLED | MARQ Gen 2 Aviator                   |
+| Device id | Display | Notes |
+| --- | --- | --- |
+| `fenix6xpro` | 280x280 MIP | tactix Delta class |
+| `fenix7x` | 260x260 MIP | tactix 7 (non-AMOLED) |
+| `fenix7xpro` | 260x260 MIP | |
+| `fenix7xpronowifi` | 260x260 MIP | |
+| `epix2pro51mm` | 416x416 AMOLED | tactix 7 AMOLED — primary dev target |
+| `fenix847mm` | 454x454 AMOLED | tactix 8 / fenix 8 Pro 47 |
+| `fenix8solar51mm` | 416x416 AMOLED | fenix 8 Solar 51 |
+| `descentmk351mm` | 416x416 AMOLED | Descent Mk3 51 |
+| `marq2` | 416x416 AMOLED | MARQ Gen 2 |
+| `marq2aviator` | 416x416 AMOLED | MARQ Gen 2 Aviator |
 
-If your watch is on this list, drop the `.prg` on it. If it isn't but it's
-CIQ 3.0+ with BLE, the same source will likely compile for it — add your
-device id to `manifest.xml` and try `monkeyc -d <your id>`.
+`source/Layout.mc` picks row pitch and accent colour at runtime from the
+display dimensions — AMOLED gets 52 px rows and amber; 64-colour MIP gets
+44 px rows and an orange that will not dither to mud.
+
+Only `epix2pro51mm` has been visually verified. The rest build clean, but the
+MIP layout has not been eyeballed on hardware.
 
 ## Install
 
-### 1. Build (or grab a release)
+Signed `.prg` files for all ten watches are committed under `bin/`. Copy the
+one matching your watch to `GARMIN/Apps/` over USB, then eject.
+
+To build instead:
 
 ```bash
-# Pick the device id from the table above
 monkeyc -d epix2pro51mm -f monkey.jungle \
-        -o bin/meshwatch.prg \
+        -o bin/meshwatch-epix2pro51mm.prg \
         -y ~/.Garmin/developer_key.der
 ```
 
-CI on this repo builds every supported device on every push; pick up the
-artifact for your watch from the Actions run.
-
-### 2. Drop on the watch
-
-Connect the watch over USB. It mounts as a mass-storage device. Copy
-`meshwatch.prg` into `GARMIN/Apps/`. Eject. The app appears in the activity
-list.
-
-### 3. Pair
-
-On the watch: open meshwatch. It will scan for any node advertising the
-Meshtastic service UUID. The first node that responds becomes the paired
-device. Subsequent launches reconnect automatically — the bond survives
-reboot.
-
-On the node: BLE must be enabled (default). Pairing mode "just works" is
-recommended; a fixed PIN also works.
-
-## How it works (for the curious)
-
-Speaks the Meshtastic BLE client API. The protobufs are hand-decoded in
-`source/Proto.mc` (see comments there for the field-number map) — only the
-fields the watch uses, no runtime protobuf library.
-
-Sync flow on connect: write `ToRadio{want_config_id}` → read `fromRadio`
-until empty → `fromNum` notify signals new data. The `MyNodeInfo` +
-`NodeInfo` packets populate the roster; `MeshPacket`/`Data` decodes into
-the message log; `Position` packets land in the position stream.
+Requires the Connect IQ SDK (Windows or macOS only) and a developer key.
 
 ## Project layout
 
 ```
-manifest.xml              app id, products, BLE permission
+manifest.xml              app id, 10 products, BLE permission
 monkey.jungle             build config
 source/HeliographApp.mc   AppBase entry point
-source/MainView.mc        the card view, nodes / messages / position modes
-source/MainDelegate.mc    button map (UP/DOWN to scroll, START to send)
-source/MeshClient.mc      BLE scan, pair, fromRadio/ToRadio framing
-source/GatewayClient.mc   alternate pairing path for non-standard nodes
-source/NodeStore.mc       in-memory + Storage-backed node DB
-source/Proto.mc           hand-decoded Meshtastic protobuf (field-number map)
-source/Layout.mc          per-device row pitch + accent color
-resources/strings/        app name
-resources/drawables/      launcher icon
-tools/witness.py          PC-side mesh witness: connect a meshtastic node
-                          over USB serial, log every text + node the watch
-                          would see. Lets you prove the BLE -> mesh path
-                          from the other side without a watch on hand.
+source/MainView.mc        nodes / messages pages
+source/MainDelegate.mc    button map, send menu
+source/MeshClient.mc      Meshtastic-direct BLE (blocked by the 20-byte wall)
+source/GatewayClient.mc   20-byte bridge protocol (active path)
+source/NodeStore.mc       node DB, Storage-backed
+source/Proto.mc           hand-rolled Meshtastic protobuf decode
+source/Layout.mc          per-device layout constants
+tools/witness.py          PC-side witness: connects to a Meshtastic node over
+                          USB serial and logs every text and node the watch
+                          would see. Proves the mesh side independently.
 ```
 
-## Build matrix
+## Roadmap
 
-| Device            | Status   | Notes |
-| ----------------- | -------- | ----- |
-| `epix2pro51mm`    | BUILD OK | Primary dev target |
-| `fenix6xpro`      | BUILD OK | tactix Delta class |
-| `fenix7x*`        | BUILD OK | 260×260 MIP family |
-| `fenix847mm`      | BUILD OK | tactix 8 / fenix 8 Pro 47 |
-| `fenix8solar51mm` | BUILD OK | fenix 8 Solar 51 |
-| `descentmk351mm`  | BUILD OK | |
-| `marq2*`          | BUILD OK | MARQ Gen 2 |
+The one thing that matters is a bridge that puts real Meshtastic traffic in
+front of the watch in 20-byte frames. Two shapes, best first:
+
+1. **A Meshtastic firmware module.** One device runs Meshtastic *and* serves a
+   CIQ-friendly GATT service. No second board. Upstreamable.
+2. **A standalone ESP32 bridge.** Connects to a Meshtastic node over UART (the
+   node speaks the same protobuf stream over serial, `0x94 0xc3` framed),
+   re-frames into 20-byte chunks, serves them over BLE. Easier to ship, costs
+   a second board.
+
+Once a bridge exists, the client work worth doing, roughly in value order:
+
+- Delivery ACKs (`ROUTING_APP`) — "did my message land?" is the biggest gap
+- Position beaconing outbound, so the watch appears on everyone else's map
+- Alerts (`ALERT_APP`) with wrist vibration
+- Waypoints (`WAYPOINT_APP`)
+- Channels — Meshtastic supports 8; this surfaces one
+- Telemetry (`TELEMETRY_APP`), traceroute (`TRACEROUTE_APP`)
+
+Worth raising upstream regardless: an MTU-safe read mode on Meshtastic's BLE
+service would let stock nodes serve Garmin watches with no bridge at all.
 
 ## Troubleshooting
 
-**The watch shows "scanning..." forever.**
-The watch can pair with one node at a time. If the node is already paired
-to your phone or another device, the watch can't get the GATT service.
+**Stuck on "scanning".** Expected without a bridge — see [Where this actually
+stands](#where-this-actually-stands). Separately, a node already bonded to
+your phone will not hand its GATT service to the watch.
 
-**The watch pairs but the node list is empty.**
-The first config sync after pair takes a few seconds. If you see "live"
-but no nodes, the partner node has nothing to advertise yet — send a packet
-from another node, or wait for a position beacon.
+**Paired but the roster is empty.** Config sync takes a few seconds. If the
+status reads `live` and nothing arrives, the node has nothing to advertise yet.
 
-**Layout looks wrong on my watch.**
-If your device id isn't in the supported list above, add it to
-`manifest.xml` and rebuild. Pixel offsets in `MainView.mc` were tuned for
-the AMOLED matrix; 280×280 MIP will look tight but readable.
+**Layout looks wrong.** If your device id is not listed above, add it to
+`manifest.xml` and rebuild; pixel offsets were tuned on the AMOLED matrix.
 
-**`monkeyc` fails with "device does not support API level".**
-Pull the device profile for your watch through the Connect IQ SDK Manager.
-
-## License
-
-MIT. See `LICENSE`.
+**`monkeyc` rejects the API level.** Pull your device profile through the
+Connect IQ SDK Manager.
 
 ## Contributing
 
-Open an issue with a watch model + Connect IQ version. Layout bugs are the
-most common PR; pixel offsets in `MainView.mc` are the first place to look.
+A bridge implementation is the single most valuable contribution. After that,
+layout fixes for the MIP watches — offsets live in `source/Layout.mc` and
+`source/MainView.mc`.
+
+Issues welcome, with a watch model and Connect IQ version.
+
+## License
+
+MIT — see `LICENSE`.

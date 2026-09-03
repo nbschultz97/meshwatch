@@ -9,11 +9,9 @@ class MainView extends WatchUi.View {
     var mStore;
     var mTimer;
     var scrollOfs = 0;
-    var mode = :nodes;   // :nodes | :msgs | :image
+    var mode = :nodes;   // :nodes | :msgs
     var flash = null;    // transient status line (e.g. send result)
     var flashUntil = 0;
-    var mBmp = null;     // cached rendered photo
-    var mBmpVersion = -1;
 
     // ROW_H and AMBER used to be inline constants tuned for the AMOLED
     // matrix. They moved into Layout so the same source can build for the
@@ -47,8 +45,6 @@ class MainView extends WatchUi.View {
         if (mode == :nodes) {
             mode = :msgs;
             mStore.unread = 0;
-        } else if (mode == :msgs) {
-            mode = :image;
         } else {
             mode = :nodes;
         }
@@ -84,14 +80,8 @@ class MainView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
 
-        if (mClient.mImgReady && mode != :image) {
-            mode = :image;       // a fresh photo just finished arriving
-            mClient.mImgReady = false;
-        }
-
-        var title = "HELIOGRAPH";
+        var title = "MESHWATCH";
         if (mode == :msgs) { title = "MESSAGES"; }
-        else if (mode == :image) { title = "PHOTO"; }
         dc.setColor(AMBER, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, 26, Graphics.FONT_TINY, title,
             Graphics.TEXT_JUSTIFY_CENTER);
@@ -116,29 +106,25 @@ class MainView extends WatchUi.View {
 
         if (mode == :nodes) {
             drawNodes(dc, w, h, now);
-        } else if (mode == :msgs) {
-            drawMessages(dc, w, h, now);
         } else {
-            drawImage(dc, w, h);
+            drawMessages(dc, w, h, now);
         }
 
-        if (mode != :image) {
-            // kept in the wide center band; a round display clips wide text at
-            // the very top/bottom edges
-            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 + 66, Graphics.FONT_XTINY,
-                (mode == :nodes)
-                    ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
-                    : "START to send",
-                Graphics.TEXT_JUSTIFY_CENTER);
+        // kept in the wide center band; a round display clips wide text at
+        // the very top/bottom edges
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h / 2 + 66, Graphics.FONT_XTINY,
+            (mode == :nodes)
+                ? mStore.count() + " nodes  " + mStore.messages.size() + " msgs"
+                : "START to send",
+            Graphics.TEXT_JUSTIFY_CENTER);
 
-            // debug HUD: reads / total bytes / max read / last parse kind
-            dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
-                "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
-                    + " mx" + mClient.dbgMax + " " + mClient.dbgKind,
-                Graphics.TEXT_JUSTIFY_CENTER);
-        }
+        // debug HUD: reads / total bytes / max read / last parse kind
+        dc.setColor(0x00AAFF, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h / 2 + 96, Graphics.FONT_XTINY,
+            "rd" + mClient.dbgReads + " b" + mClient.dbgBytes
+                + " mx" + mClient.dbgMax + " " + mClient.dbgKind,
+            Graphics.TEXT_JUSTIFY_CENTER);
     }
 
     function drawNodes(dc, w, h, now) {
@@ -230,50 +216,6 @@ class MainView extends WatchUi.View {
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(70, y + 20, Graphics.FONT_SMALL, m.get(:text),
                 Graphics.TEXT_JUSTIFY_LEFT);
-        }
-    }
-
-    function drawImage(dc, w, h) {
-        // heavy render happens once per image, into a cached bitmap; the
-        // per-frame path is a single scaled blit (avoids the watchdog).
-        if (mClient.mImgVersion <= 0) {
-            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-            var msg = "no photo (START menu)";
-            if (mClient.mImgSeen > 0) {
-                msg = "receiving " + (mClient.mImgSeen * 100 / 128) + "%";
-            }
-            dc.drawText(w / 2, h / 2, Graphics.FONT_TINY, msg,
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-            return;
-        }
-        if (mBmpVersion != mClient.mImgVersion) {
-            buildBitmap();
-            mBmpVersion = mClient.mImgVersion;
-        }
-        var side = 320;
-        if (mBmp != null) {
-            dc.drawScaledBitmap((w - side) / 2, 88, side, side, mBmp);
-        }
-    }
-
-    // Render the 64x64 4-bit buffer into a native bitmap once.
-    function buildBitmap() {
-        var buf = mClient.mImgBuf;
-        if (buf == null || buf.size() < 2048) {
-            return;
-        }
-        var ref = Graphics.createBufferedBitmap({:width => 64, :height => 64});
-        mBmp = ref.get();
-        var bdc = mBmp.getDc();
-        for (var y = 0; y < 64; y++) {
-            var rowbase = y * 32;
-            for (var x = 0; x < 64; x++) {
-                var byte = buf[rowbase + (x / 2)];
-                var nib = (x % 2 == 0) ? ((byte >> 4) & 0x0f) : (byte & 0x0f);
-                var g = nib * 17;
-                bdc.setColor((g << 16) | (g << 8) | g, Graphics.COLOR_TRANSPARENT);
-                bdc.drawPoint(x, y);
-            }
         }
     }
 
