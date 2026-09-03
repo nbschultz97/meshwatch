@@ -6,6 +6,24 @@ watch and a Meshtastic node over BLE.
 The watch is the display. The node is the radio. You get the node list, the
 text channels, and the position stream from the mesh, right on the wrist.
 
+## Screenshots
+
+| Nodes view | Messages view | Canned-message picker |
+| :---: | :---: | :---: |
+| ![nodes view — paired state, WATCH + ALPH roster with battery and last-heard, 1 new message badge](docs/screenshots/01-nodes-view.png) | ![messages view — recent text log: you/ACK/ALPH:hello from a der, START to send prompt](docs/screenshots/02-messages-view.png) | ![canned-message picker — OTW/RTB/HOLD rows selected by UP/DOWN, START to send](docs/screenshots/03-canned-picker.png) |
+
+The roster column on the left is the short name; the right column is battery
+percent plus last-heard age in seconds (or `PWR` when the paired node
+reports its power source rather than a battery). The green `[1 new]` badge
+in the header marks an unread mesh packet — clear it by opening the
+messages view. The footer (`rd0 b0 mx0 -`) is the radio config the watch
+last confirmed from the node: region-disabled, no BLE bonds stored, no
+mesh hops through a repeater, no active hop count.
+
+All three shots are Connect IQ simulator renders against `epix2pro51mm`
+(tactix 7 AMOLED). The app supports nine more device ids — same source,
+per-device layout picked at runtime — see the table below.
+
 ## What it does
 
 - Scans for a paired Meshtastic node over BLE (service UUID
