@@ -2,6 +2,7 @@ bin/
 *.prg
 *.prg.debug.xml
 
-# PlatformIO build cache
-gateway/.pio/
-breaze/.pio/
+# monkeyc build intermediates
+gen/
+external-mir/
+internal-mir/
