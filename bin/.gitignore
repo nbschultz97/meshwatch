@@ -1,0 +1,8 @@
+# Source-controlled PRG builds are intentionally committed so the public repo
+# has every supported watch's signed .prg without a separate release pipeline.
+# The build intermediates (debug.xml, external-mir/, internal-mir/, gen/) and
+# the SDK download cache are excluded — only the signed .prg files go in.
+*
+!*.gitignore
+!.gitkeep
+!*.prg

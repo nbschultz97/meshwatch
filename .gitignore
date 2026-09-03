@@ -1,8 +1,11 @@
-bin/
-*.prg
-*.prg.debug.xml
+# Source-controlled PRG builds are intentionally committed so the public repo
+# has every supported watch's signed .prg without a separate release pipeline.
+# Exclude debug.xml and SDK intermediates — only the signed .prg files go in.
 
 # monkeyc build intermediates
 gen/
 external-mir/
 internal-mir/
+
+# monkeyc debug data; .prg files themselves are committed
+*.prg.debug.xml
