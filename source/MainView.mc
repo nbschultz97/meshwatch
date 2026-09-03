@@ -15,8 +15,11 @@ class MainView extends WatchUi.View {
     var mBmp = null;     // cached rendered photo
     var mBmpVersion = -1;
 
-    const ROW_H = 52;
-    const AMBER = 0xFFB020;
+    // ROW_H and AMBER used to be inline constants tuned for the AMOLED
+    // matrix. They moved into Layout so the same source can build for the
+    // 280x280 64-color class too (fenix6xpro / tactix Delta).
+    var ROW_H = Layout.rowH();
+    var AMBER = Layout.accentColor();
 
     function initialize(client, store) {
         View.initialize();
@@ -139,7 +142,7 @@ class MainView extends WatchUi.View {
     }
 
     function drawNodes(dc, w, h, now) {
-        var top = 96;
+        var top = Layout.topMargin();
         var visible = (h - top - 30) / ROW_H;
         var n = mStore.count();
 
@@ -197,7 +200,7 @@ class MainView extends WatchUi.View {
     }
 
     function drawMessages(dc, w, h, now) {
-        var top = 96;
+        var top = Layout.topMargin();
         var visible = (h - top - 30) / ROW_H;
         var msgs = mStore.messages;
 

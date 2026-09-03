@@ -351,14 +351,16 @@ class GatewayClient extends Ble.BleDelegate {
         }
     }
 
+    // Pre-launch demo roster. See MeshClient.loadDemoData() — same idea,
+    // generic placeholders, replaced on first real node-DB sync.
     function loadDemoData() {
         var now = Time.now().value();
         deviceName = "DEMO";
         state = S_READY;
-        mStore.myNum = 0x10000001l;
-        mStore.upsert(0x10000001l, {:shortName => "NOAH", :battery => 88, :lastHeard => now});
-        mStore.upsert(0x10000002l, {:shortName => "OUTSTATION01", :battery => 101, :lastHeard => now - 42});
-        mStore.addMessage(null, "OS01: motion detected N gate", false);
+        mStore.myNum = 0xA0000001l;
+        mStore.upsert(0xA0000001l, {:shortName => "WATCH", :battery => 88, :lastHeard => now});
+        mStore.upsert(0xA0000002l, {:shortName => "ALPH", :battery => 101, :lastHeard => now - 42});
+        mStore.addMessage(null, "ALPH: hello from a demo node", false);
         WatchUi.requestUpdate();
     }
 

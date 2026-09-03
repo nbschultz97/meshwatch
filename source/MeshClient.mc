@@ -389,7 +389,7 @@ class MeshClient extends Ble.BleDelegate {
     function sendText(text) {
         if (deviceName != null && deviceName.equals("DEMO")) {
             mStore.addMessage(mStore.myNum, text, true);
-            mStore.addMessage(0x10000002l, "rgr: " + text, false);
+            mStore.addMessage(0xA0000002l, "rgr: " + text, false);
             buzz();
             WatchUi.requestUpdate();
             return "sent (demo)";
@@ -408,18 +408,23 @@ class MeshClient extends Ble.BleDelegate {
         }
     }
 
+    // Pre-launch demo roster. The watch shows this for the first few seconds
+    // before a real Meshtastic node DB has come in over BLE — gives the user
+    // something on screen so the UI isn't blank. Replaced the moment a real
+    // config-complete handshake lands. Nodes and IDs are generic on purpose;
+    // they are placeholders, not anyone's actual mesh.
     function loadDemoData() {
         var now = Time.now().value();
         deviceName = "DEMO";
         state = S_READY;
-        mStore.myNum = 0x10000001l;
-        mStore.upsert(0x10000001l, {:shortName => "NOAH", :longName => "tactix 7 (you)",
+        mStore.myNum = 0xA0000001l;
+        mStore.upsert(0xA0000001l, {:shortName => "WATCH", :longName => "your watch (demo)",
             :battery => 88, :lastHeard => now});
-        mStore.upsert(0x10000002l, {:shortName => "OS01", :longName => "Outstation01",
+        mStore.upsert(0xA0000002l, {:shortName => "ALPH", :longName => "alpha-node",
             :battery => 101, :lastHeard => now - 42, :snr => 8.5});
-        mStore.upsert(0x10000003l, {:shortName => "OS02", :longName => "Outstation02 (pi12)",
+        mStore.upsert(0xA0000003l, {:shortName => "BRAV", :longName => "bravo-node",
             :battery => 64, :lastHeard => now - 380, :hops => 1});
-        mStore.upsert(0x10000004l, {:shortName => "PCKT", :longName => "PICKET UGV",
+        mStore.upsert(0xA0000004l, {:shortName => "CHAR", :longName => "charlie-node",
             :battery => 77, :lastHeard => now - 7200, :hops => 2});
         mStore.packetCount = 17;
         WatchUi.requestUpdate();

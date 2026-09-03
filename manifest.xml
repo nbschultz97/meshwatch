@@ -5,10 +5,35 @@
                     launcherIcon="@Drawables.LauncherIcon"
                     name="@Strings.AppName"
                     type="watch-app"
-                    minApiLevel="5.0.0">
+                    minApiLevel="3.0.0">
         <iq:products>
-            <!-- tactix 7 AMOLED shares the epix Pro Gen2 51mm CIQ identity -->
+            <!-- 280 x 280, 64-color, 5-button. The tactix Delta class.
+                 Connect IQ has no tactix product id; the whole tactix line
+                 ships under the fenix / epix sibling. -->
+            <iq:product id="fenix6xpro"/>
+
+            <!-- 260 x 260, 64-color, 5-button. tactix 7 (non-AMOLED) and
+                 its fenix 7X cousins. -->
+            <iq:product id="fenix7x"/>
+            <iq:product id="fenix7xpro"/>
+            <iq:product id="fenix7xpronowifi"/>
+
+            <!-- 416 x 416 AMOLED, 5-button. The original target: tactix 7
+                 AMOLED. epix2pro51mm is the epix Pro Gen2 51mm CIQ id. -->
             <iq:product id="epix2pro51mm"/>
+
+            <!-- 454 x 454 AMOLED, 5-button. tactix 8 and fenix 8 Pro 47. -->
+            <iq:product id="fenix847mm"/>
+
+            <!-- 416 x 416 AMOLED, 5-button. fenix 8 Solar 51. -->
+            <iq:product id="fenix8solar51mm"/>
+
+            <!-- 416 x 416 AMOLED, 5-button. Descent Mk3 51. -->
+            <iq:product id="descentmk351mm"/>
+
+            <!-- 416 x 416 AMOLED, 5-button. MARQ Gen 2. -->
+            <iq:product id="marq2"/>
+            <iq:product id="marq2aviator"/>
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="BluetoothLowEnergy"/>
