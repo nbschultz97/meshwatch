@@ -127,7 +127,7 @@ Requires the Connect IQ SDK (Windows or macOS only) and a developer key.
 ```
 manifest.xml              app id, 10 products, BLE permission
 monkey.jungle             build config
-source/HeliographApp.mc   AppBase entry point
+source/MeshwatchApp.mc    AppBase entry point
 source/MainView.mc        nodes / messages pages
 source/MainDelegate.mc    button map, send menu
 source/MeshClient.mc      Meshtastic-direct BLE (blocked by the 20-byte wall)

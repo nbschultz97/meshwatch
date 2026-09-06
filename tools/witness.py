@@ -1,5 +1,5 @@
 """PC-side mesh witness: connects to the Heltec over serial and logs every
-text message and node it sees. Run while testing Heliograph on the watch so
+text message and node it sees. Run while testing meshwatch on the watch so
 we can prove the watch -> node -> mesh path from the other side."""
 import sys
 import time

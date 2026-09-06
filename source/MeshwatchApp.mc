@@ -1,7 +1,7 @@
 using Toybox.Application;
 using Toybox.WatchUi;
 
-class HeliographApp extends Application.AppBase {
+class MeshwatchApp extends Application.AppBase {
     var mClient;
     var mStore;
 
