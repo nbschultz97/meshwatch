@@ -4,7 +4,7 @@ using Toybox.System;
 using Toybox.Time;
 using Toybox.WatchUi;
 
-// Client for the Heliograph gateway's watch-friendly BLE service. Every frame
+// Client for the meshwatch bridge's watch-friendly BLE service. Every frame
 // is <= 20 bytes so nothing is truncated by the tactix's 22-byte read cap.
 // Same public surface as the old MeshClient so the UI is unchanged.
 class GatewayClient extends Ble.BleDelegate {
@@ -133,7 +133,7 @@ class GatewayClient extends Ble.BleDelegate {
             }
         }
         var name = sr.getDeviceName();
-        return name != null && name.find("Heliograph") != null;
+        return name != null && name.find("meshwatch") != null;
     }
 
     function onConnectedStateChanged(device, connState) {
